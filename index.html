@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Preview Player</title>
+    <title>YT Preview</title>
     <style>
         * {
             margin: 0;
@@ -21,9 +21,7 @@
         #player-container {
             width: 100%;
             height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            position: relative;
         }
         
         #youtube-player {
@@ -32,89 +30,146 @@
             border: none;
         }
         
-        #loading {
-            color: #fff;
-            font-family: Arial, sans-serif;
-            font-size: 18px;
+        #volume-indicator {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-        }
-        
-        #error {
-            color: #ff4444;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
             font-family: Arial, sans-serif;
             font-size: 14px;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        #volume-indicator.visible {
+            opacity: 1;
         }
     </style>
 </head>
 <body>
     <div id="player-container">
-        <div id="loading">Loading video...</div>
-        <div id="error">Video unavailable</div>
-        <iframe 
-            id="youtube-player"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowfullscreen
-            style="display: none;">
-        </iframe>
+        <div id="youtube-player"></div>
+        <div id="volume-indicator">🔊 5%</div>
     </div>
 
     <script>
+        // Загружаем YouTube IFrame API
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
         const params = new URLSearchParams(window.location.search);
         const videoId = params.get('v');
         
-        const player = document.getElementById('youtube-player');
-        const loading = document.getElementById('loading');
-        const error = document.getElementById('error');
-        
-        if (!videoId) {
-            loading.style.display = 'none';
-            error.textContent = 'No video ID provided';
-            error.style.display = 'block';
-        } else {
-            // Стандартный YouTube embed URL
-            player.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&mute=1&controls=1&rel=0&modestbranding=1`;
+        let player = null;
+        let playerReady = false;
+        let currentVolume = 5;
+        let volumeIndicatorTimeout = null;
+
+        // Функция вызывается когда YouTube IFrame API готов
+        function onYouTubeIframeAPIReady() {
+            if (!videoId) return;
             
-            player.onload = function() {
-                loading.style.display = 'none';
-                player.style.display = 'block';
-            };
-            
-            player.onerror = function() {
-                loading.style.display = 'none';
-                error.style.display = 'block';
-            };
-            
-            // Таймаут на случай если видео не загрузится
-            setTimeout(() => {
-                if (loading.style.display !== 'none') {
-                    loading.style.display = 'none';
-                    error.style.display = 'block';
+            player = new YT.Player('youtube-player', {
+                videoId: videoId,
+                width: '100%',
+                height: '100%',
+                playerVars: {
+                    'autoplay': 1,
+                    'mute': 1,          // Начинаем без звука чтобы обойти блокировку браузера
+                    'controls': 0,       // Убираем все элементы управления
+                    'rel': 0,            // Не показываем похожие видео
+                    'showinfo': 0,       // Не показываем информацию о видео
+                    'modestbranding': 1, // Минимальный брендинг
+                    'iv_load_policy': 3, // Не показываем аннотации
+                    'fs': 0,             // Убираем кнопку fullscreen
+                    'disablekb': 1,      // Отключаем управление клавиатурой
+                    'playsinline': 1,    // Воспроизведение внутри контейнера
+                    'loop': 1,           // Зацикливаем видео
+                    'playlist': videoId  // Нужен для работы loop
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
                 }
-            }, 10000);
+            });
         }
-        
-        // Обработка сообщений от родительского окна (для управления плеером)
-        window.addEventListener('message', function(event) {
-            if (event.data && event.data.type === 'yt-preview-command') {
-                switch(event.data.command) {
-                    case 'pause':
-                        // Можно добавить управление через YouTube IFrame API если нужно
-                        break;
-                    case 'stop':
-                        player.src = 'about:blank';
-                        break;
+
+        function onPlayerReady(event) {
+            playerReady = true;
+            // Пытаемся сразу включить звук на 5%
+            // Браузер может заблокировать это, но попробуем
+            try {
+                event.target.setVolume(currentVolume);
+                event.target.unMute();
+                event.target.playVideo();
+            } catch (e) {
+                console.log('Autoplay with sound blocked, trying muted');
+                // Если не получилось, оставляем без звука
+                event.target.mute();
+                event.target.playVideo();
+            }
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+                // Когда видео начало играть, пробуем включить звук если он был выключен
+                if (player.isMuted && player.isMuted()) {
+                    try {
+                        player.setVolume(currentVolume);
+                        player.unMute();
+                    } catch (e) {
+                        // Браузер заблокировал, оставляем без звука
+                    }
                 }
             }
-        });
+        }
+
+        // Обработка колёсика мыши для изменения громкости
+        const playerContainer = document.getElementById('player-container');
+        const volumeIndicator = document.getElementById('volume-indicator');
+
+        playerContainer.addEventListener('wheel', function(e) {
+            e.preventDefault(); // Предотвращаем прокрутку страницы
+            
+            if (!player || !playerReady) return;
+            
+            // Определяем направление прокрутки
+            const delta = e.deltaY > 0 ? -5 : 5;
+            currentVolume = Math.max(0, Math.min(100, currentVolume + delta));
+            
+            // Применяем громкость
+            player.setVolume(currentVolume);
+            
+            // Если громкость больше 0, включаем звук
+            if (currentVolume > 0) {
+                player.unMute();
+            } else {
+                player.mute();
+            }
+            
+            // Показываем индикатор громкости
+            volumeIndicator.textContent = currentVolume > 0 ? `🔊 ${currentVolume}%` : '🔇 0%';
+            volumeIndicator.classList.add('visible');
+            
+            // Скрываем индикатор через 1.5 секунды
+            clearTimeout(volumeIndicatorTimeout);
+            volumeIndicatorTimeout = setTimeout(() => {
+                volumeIndicator.classList.remove('visible');
+            }, 1500);
+            
+        }, { passive: false }); // passive: false чтобы можно было вызвать preventDefault
+
+        // Также предотвращаем прокрутку при использовании тачпада
+        playerContainer.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+        }, { passive: false });
     </script>
 </body>
 </html>
