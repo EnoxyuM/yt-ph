@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YT Previewы</title>
+    <title>YT Preview</title>
     <style>
         * {
             margin: 0;
@@ -49,14 +49,14 @@
                 playerVars: {
                     'autoplay': 1,
                     'mute': 1,
-                    'controls': 0,
-                    'rel': 0,
-                    'modestbranding': 1,
-                    'iv_load_policy': 3,
-                    'fs': 0,
-                    'disablekb': 1,
+                    'controls': 1,              // Показываем контролы (шестерёнка, прогрессбар, пауза)
+                    'rel': 0,                   // Без похожих видео в конце
+                    'modestbranding': 1,        // Минимальный логотип
+                    'iv_load_policy': 3,        // Без аннотаций
+                    'fs': 1,                    // Включаем кнопку fullscreen
+                    'disablekb': 0,             // Разрешаем управление клавиатурой
                     'playsinline': 1,
-                    'cc_load_policy': 0,
+                    'cc_load_policy': 0,        // Без субтитров по умолчанию
                     'loop': 1,
                     'playlist': videoId
                 },
