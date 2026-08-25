@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YT Preview</title>
+    <title>YT Previewы</title>
     <style>
         * {
             margin: 0;
@@ -16,56 +16,17 @@
             height: 100%;
             background: #000;
             overflow: hidden;
-            position: relative;
         }
         
-        /* Контейнер обрезает всё что выходит за его границы */
-        #player-container {
+        #youtube-player {
             width: 100%;
             height: 100%;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        /* Делаем iframe БОЛЬШЕ чем контейнер, чтобы UI элементы оказались за пределами */
-        #youtube-player {
-            /* Делаем iframe на 60px выше чтобы скрыть верхний UI */
-            position: absolute;
-            top: -40px; /* Сдвигаем вверх */
-            left: 0;
-            width: 100%;
-            height: calc(100% + 80px); /* Добавляем высоту для компенсации сдвига */
             border: none;
-        }
-        
-        #volume-indicator {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.9);
-            color: #fff;
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-family: Arial, sans-serif;
-            font-size: 18px;
-            font-weight: bold;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            z-index: 1000;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-        }
-        
-        #volume-indicator.visible {
-            opacity: 1;
         }
     </style>
 </head>
 <body>
-    <div id="player-container">
-        <div id="youtube-player"></div>
-        <div id="volume-indicator">🔊 5%</div>
-    </div>
+    <div id="youtube-player"></div>
 
     <script>
         const tag = document.createElement('script');
@@ -77,9 +38,6 @@
         const videoId = params.get('v');
         
         let player = null;
-        let playerReady = false;
-        let currentVolume = 5;
-        let volumeIndicatorTimeout = null;
 
         function onYouTubeIframeAPIReady() {
             if (!videoId) return;
@@ -93,18 +51,14 @@
                     'mute': 1,
                     'controls': 0,
                     'rel': 0,
-                    'showinfo': 0,
                     'modestbranding': 1,
                     'iv_load_policy': 3,
                     'fs': 0,
                     'disablekb': 1,
                     'playsinline': 1,
                     'cc_load_policy': 0,
-                    'autohide': 1,
                     'loop': 1,
-                    'playlist': videoId,
-                    'enablejsapi': 1,
-                    'origin': window.location.origin
+                    'playlist': videoId
                 },
                 events: {
                     'onReady': onPlayerReady,
@@ -114,17 +68,8 @@
         }
 
         function onPlayerReady(event) {
-            playerReady = true;
-            
-            // Отключаем субтитры
             try {
-                if (event.target.unloadModule) {
-                    event.target.unloadModule('captions');
-                }
-            } catch (e) {}
-            
-            try {
-                event.target.setVolume(currentVolume);
+                event.target.setVolume(5);
                 event.target.unMute();
                 event.target.playVideo();
             } catch (e) {
@@ -137,53 +82,12 @@
             if (event.data === YT.PlayerState.PLAYING) {
                 if (player.isMuted && player.isMuted()) {
                     try {
-                        player.setVolume(currentVolume);
+                        player.setVolume(5);
                         player.unMute();
                     } catch (e) {}
                 }
             }
         }
-
-        function showVolumeIndicator() {
-            const volumeIndicator = document.getElementById('volume-indicator');
-            volumeIndicator.textContent = currentVolume > 0 ? `🔊 ${currentVolume}%` : '🔇 0%';
-            volumeIndicator.classList.add('visible');
-            
-            clearTimeout(volumeIndicatorTimeout);
-            volumeIndicatorTimeout = setTimeout(() => {
-                volumeIndicator.classList.remove('visible');
-            }, 1500);
-        }
-
-        // Слушаем команды от родителя
-        window.addEventListener('message', function(event) {
-            if (!event.data || event.data.type !== 'yt-preview-command') return;
-            
-            const command = event.data.command;
-            
-            switch (command) {
-                case 'setVolume':
-                    const newVolume = Math.max(0, Math.min(100, event.data.volume));
-                    currentVolume = newVolume;
-                    
-                    if (player && playerReady) {
-                        player.setVolume(currentVolume);
-                        if (currentVolume > 0) {
-                            player.unMute();
-                        } else {
-                            player.mute();
-                        }
-                    }
-                    showVolumeIndicator();
-                    break;
-                    
-                case 'stop':
-                    if (player && playerReady) {
-                        player.stopVideo();
-                    }
-                    break;
-            }
-        });
     </script>
 </body>
 </html>
