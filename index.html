@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YT Previewы</title>
+    <title>YT Preview</title>
     <style>
         * {
             margin: 0;
@@ -30,6 +30,23 @@
             height: 100%;
             border: none;
             display: block;
+            /* Сдвигаем iframe чтобы скрыть верхний UI */
+            margin-top: -30px;
+            height: calc(100% + 30px);
+        }
+        
+        /* CSS хаки для скрытия YouTube UI элементов */
+        iframe {
+            position: relative;
+        }
+        
+        /* Скрываем субтитры и другие UI элементы через CSS */
+        ::part(ytp-caption-window-container),
+        .ytp-caption-window-container,
+        .caption-window,
+        .captions-text {
+            display: none !important;
+            visibility: hidden !important;
         }
         
         #volume-indicator {
@@ -52,11 +69,23 @@
         #volume-indicator.visible {
             opacity: 1;
         }
+        
+        /* Overlay для блокировки YouTube UI */
+        #ui-blocker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 40px; /* Блокируем верхние 40px где может быть UI */
+            z-index: 999;
+            pointer-events: none; /* Пропускаем клики к iframe */
+        }
     </style>
 </head>
 <body>
     <div id="player-container">
         <div id="youtube-player"></div>
+        <div id="ui-blocker"></div>
         <div id="volume-indicator">🔊 5%</div>
     </div>
 
@@ -75,7 +104,6 @@
         let currentVolume = 5;
         let volumeIndicatorTimeout = null;
 
-        // Функция вызывается когда YouTube IFrame API готов
         function onYouTubeIframeAPIReady() {
             if (!videoId) return;
             
@@ -86,22 +114,24 @@
                 playerVars: {
                     'autoplay': 1,
                     'mute': 1,
-                    'controls': 0,              // Убираем все контролы
-                    'rel': 0,                   // Без похожих видео
-                    'showinfo': 0,              // Без информации
-                    'modestbranding': 1,        // Минимальный логотип
-                    'iv_load_policy': 3,        // Без аннотаций
-                    'fs': 0,                    // Без fullscreen
-                    'disablekb': 1,             // Без клавиатуры
+                    'controls': 0,
+                    'rel': 0,
+                    'showinfo': 0,
+                    'modestbranding': 1,
+                    'iv_load_policy': 3,
+                    'fs': 0,
+                    'disablekb': 1,
                     'playsinline': 1,
-                    'cc_load_policy': 0,        // Без субтитров
+                    'cc_load_policy': 0,
                     'cc_lang_pref': 'en',
-                    'autohide': 1,              // Автоскрытие контролов
+                    'autohide': 1,
                     'loop': 1,
                     'playlist': videoId,
                     'theme': 'dark',
                     'color': 'red',
-                    'hl': 'en'
+                    'hl': 'en',
+                    'enablejsapi': 1,
+                    'origin': window.location.origin
                 },
                 events: {
                     'onReady': onPlayerReady,
@@ -112,6 +142,14 @@
 
         function onPlayerReady(event) {
             playerReady = true;
+            
+            // Пытаемся отключить субтитры через API
+            try {
+                if (player.getOption && player.getOption('captions', 'track')) {
+                    player.setOption('captions', 'track', {languageCode: ''});
+                }
+            } catch (e) {}
+            
             try {
                 event.target.setVolume(currentVolume);
                 event.target.unMute();
@@ -133,7 +171,6 @@
             }
         }
 
-        // Показ индикатора громкости
         function showVolumeIndicator() {
             const volumeIndicator = document.getElementById('volume-indicator');
             volumeIndicator.textContent = currentVolume > 0 ? `🔊 ${currentVolume}%` : '🔇 0%';
@@ -145,23 +182,20 @@
             }, 1500);
         }
 
-        // Локальный wheel listener - отправляет сообщение родителю
-        document.getElementById('player-container').addEventListener('wheel', function(e) {
+        // Слушаем wheel и отправляем родителю
+        document.addEventListener('wheel', function(e) {
             e.preventDefault();
             e.stopPropagation();
             
-            // Отправляем wheel event родителю
             if (window.parent !== window) {
                 window.parent.postMessage({
                     type: 'yt-preview-wheel',
                     deltaY: e.deltaY
                 }, '*');
             }
-            
-            return false;
         }, { passive: false });
 
-        // Принимаем команды от родителя
+        // Слушаем команды от родителя
         window.addEventListener('message', function(event) {
             if (!event.data || event.data.type !== 'yt-preview-command') return;
             
@@ -188,14 +222,25 @@
                         player.stopVideo();
                     }
                     break;
+                    
+                case 'disableSubtitles':
+                    // Пытаемся отключить субтитры
+                    if (player && playerReady) {
+                        try {
+                            player.unloadModule('captions');
+                        } catch (e) {}
+                        try {
+                            player.setOption('captions', 'reload', false);
+                        } catch (e) {}
+                        try {
+                            player.setOption('captions', 'track', {languageCode: ''});
+                        } catch (e) {}
+                    }
+                    break;
             }
         });
 
-        // Предотвращаем любые попытки прокрутки
-        document.addEventListener('wheel', function(e) {
-            e.preventDefault();
-        }, { passive: false });
-        
+        // Блокируем прокрутку
         document.addEventListener('touchmove', function(e) {
             e.preventDefault();
         }, { passive: false });
