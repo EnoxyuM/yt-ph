@@ -22,24 +22,27 @@
             width: 100%;
             height: 100%;
             position: relative;
+            overflow: hidden;
         }
         
         #youtube-player {
             width: 100%;
             height: 100%;
             border: none;
+            display: block;
         }
         
         #volume-indicator {
             position: absolute;
             bottom: 10px;
             right: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             color: #fff;
-            padding: 5px 10px;
+            padding: 6px 12px;
             border-radius: 4px;
             font-family: Arial, sans-serif;
-            font-size: 14px;
+            font-size: 16px;
+            font-weight: bold;
             opacity: 0;
             transition: opacity 0.3s;
             pointer-events: none;
@@ -82,17 +85,23 @@
                 height: '100%',
                 playerVars: {
                     'autoplay': 1,
-                    'mute': 1,          // Начинаем без звука чтобы обойти блокировку браузера
-                    'controls': 0,       // Убираем все элементы управления
-                    'rel': 0,            // Не показываем похожие видео
-                    'showinfo': 0,       // Не показываем информацию о видео
-                    'modestbranding': 1, // Минимальный брендинг
-                    'iv_load_policy': 3, // Не показываем аннотации
-                    'fs': 0,             // Убираем кнопку fullscreen
-                    'disablekb': 1,      // Отключаем управление клавиатурой
-                    'playsinline': 1,    // Воспроизведение внутри контейнера
-                    'loop': 1,           // Зацикливаем видео
-                    'playlist': videoId  // Нужен для работы loop
+                    'mute': 1,
+                    'controls': 0,              // Убираем все контролы
+                    'rel': 0,                   // Без похожих видео
+                    'showinfo': 0,              // Без информации
+                    'modestbranding': 1,        // Минимальный логотип
+                    'iv_load_policy': 3,        // Без аннотаций
+                    'fs': 0,                    // Без fullscreen
+                    'disablekb': 1,             // Без клавиатуры
+                    'playsinline': 1,
+                    'cc_load_policy': 0,        // Без субтитров
+                    'cc_lang_pref': 'en',
+                    'autohide': 1,              // Автоскрытие контролов
+                    'loop': 1,
+                    'playlist': videoId,
+                    'theme': 'dark',
+                    'color': 'red',
+                    'hl': 'en'
                 },
                 events: {
                     'onReady': onPlayerReady,
@@ -103,15 +112,11 @@
 
         function onPlayerReady(event) {
             playerReady = true;
-            // Пытаемся сразу включить звук на 5%
-            // Браузер может заблокировать это, но попробуем
             try {
                 event.target.setVolume(currentVolume);
                 event.target.unMute();
                 event.target.playVideo();
             } catch (e) {
-                console.log('Autoplay with sound blocked, trying muted');
-                // Если не получилось, оставляем без звука
                 event.target.mute();
                 event.target.playVideo();
             }
@@ -119,55 +124,79 @@
 
         function onPlayerStateChange(event) {
             if (event.data === YT.PlayerState.PLAYING) {
-                // Когда видео начало играть, пробуем включить звук если он был выключен
                 if (player.isMuted && player.isMuted()) {
                     try {
                         player.setVolume(currentVolume);
                         player.unMute();
-                    } catch (e) {
-                        // Браузер заблокировал, оставляем без звука
-                    }
+                    } catch (e) {}
                 }
             }
         }
 
-        // Обработка колёсика мыши для изменения громкости
-        const playerContainer = document.getElementById('player-container');
-        const volumeIndicator = document.getElementById('volume-indicator');
-
-        playerContainer.addEventListener('wheel', function(e) {
-            e.preventDefault(); // Предотвращаем прокрутку страницы
-            
-            if (!player || !playerReady) return;
-            
-            // Определяем направление прокрутки
-            const delta = e.deltaY > 0 ? -5 : 5;
-            currentVolume = Math.max(0, Math.min(100, currentVolume + delta));
-            
-            // Применяем громкость
-            player.setVolume(currentVolume);
-            
-            // Если громкость больше 0, включаем звук
-            if (currentVolume > 0) {
-                player.unMute();
-            } else {
-                player.mute();
-            }
-            
-            // Показываем индикатор громкости
+        // Показ индикатора громкости
+        function showVolumeIndicator() {
+            const volumeIndicator = document.getElementById('volume-indicator');
             volumeIndicator.textContent = currentVolume > 0 ? `🔊 ${currentVolume}%` : '🔇 0%';
             volumeIndicator.classList.add('visible');
             
-            // Скрываем индикатор через 1.5 секунды
             clearTimeout(volumeIndicatorTimeout);
             volumeIndicatorTimeout = setTimeout(() => {
                 volumeIndicator.classList.remove('visible');
             }, 1500);
-            
-        }, { passive: false }); // passive: false чтобы можно было вызвать preventDefault
+        }
 
-        // Также предотвращаем прокрутку при использовании тачпада
-        playerContainer.addEventListener('touchmove', function(e) {
+        // Локальный wheel listener - отправляет сообщение родителю
+        document.getElementById('player-container').addEventListener('wheel', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Отправляем wheel event родителю
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'yt-preview-wheel',
+                    deltaY: e.deltaY
+                }, '*');
+            }
+            
+            return false;
+        }, { passive: false });
+
+        // Принимаем команды от родителя
+        window.addEventListener('message', function(event) {
+            if (!event.data || event.data.type !== 'yt-preview-command') return;
+            
+            const command = event.data.command;
+            
+            switch (command) {
+                case 'setVolume':
+                    const newVolume = Math.max(0, Math.min(100, event.data.volume));
+                    currentVolume = newVolume;
+                    
+                    if (player && playerReady) {
+                        player.setVolume(currentVolume);
+                        if (currentVolume > 0) {
+                            player.unMute();
+                        } else {
+                            player.mute();
+                        }
+                    }
+                    showVolumeIndicator();
+                    break;
+                    
+                case 'stop':
+                    if (player && playerReady) {
+                        player.stopVideo();
+                    }
+                    break;
+            }
+        });
+
+        // Предотвращаем любые попытки прокрутки
+        document.addEventListener('wheel', function(e) {
+            e.preventDefault();
+        }, { passive: false });
+        
+        document.addEventListener('touchmove', function(e) {
             e.preventDefault();
         }, { passive: false });
     </script>
